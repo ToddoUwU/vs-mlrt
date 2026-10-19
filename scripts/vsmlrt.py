@@ -36,13 +36,22 @@ import vapoursynth as vs
 from vapoursynth import core
 
 
+def _text(value: typing.Union[str, bytes]) -> str:
+    """ Plugin data values: bytes under VapourSynth API3, str under API4 (utf-8 data) """
+    return value.decode() if isinstance(value, bytes) else value
+
+
+def _texts(values: typing.Iterable[typing.Union[str, bytes]]) -> typing.List[str]:
+    return [_text(v) for v in values]
+
+
 def get_plugins_path() -> str:
     plugin_names = ("ov", "ort", "ncnn", "trt", "trt_rtx", "migx")
 
     for plugin_name in plugin_names:
         try:
             path = getattr(core, plugin_name).Version()["path"]
-            return os.path.dirname(path).decode()
+            return os.path.dirname(_text(path))
         except AttributeError:
             continue
 
@@ -583,7 +592,7 @@ def DPIR(
     if (
         isinstance(backend, Backend.TRT) and
         not backend.force_fp16 and
-        parse_trt_version(int(core.trt.Version()["tensorrt_version"])) < (11, 0, 0)
+        parse_trt_version(int(_text(core.trt.Version()["tensorrt_version"]))) < (11, 0, 0)
     ):
         backend.custom_args.extend([
             "--precisionConstraints=obey",
@@ -889,10 +898,10 @@ def get_rife_input(clip: vs.VideoNode) -> typing.List[vs.VideoNode]:
 
 
     if (hasattr(core, 'akarin') and
-        b"width" in core.akarin.Version()["expr_features"] and
-        b"height" in core.akarin.Version()["expr_features"]
+        "width" in _texts(core.akarin.Version()["expr_features"]) and
+        "height" in _texts(core.akarin.Version()["expr_features"])
     ):
-        if b"fp16" in core.akarin.Version()["expr_features"]:
+        if "fp16" in _texts(core.akarin.Version()["expr_features"]):
             empty = clip.std.BlankClip(format=gray_format, length=1)
         else:
             empty = clip.std.BlankClip(format=vs.GRAYS, length=1)
@@ -1114,7 +1123,7 @@ def RIFEMerge(
                     backend.force_fp16 = False
                     backend.fp16 = True
 
-                if parse_trt_version(int(core.trt.Version()["tensorrt_version"])) < (11, 0, 0):
+                if parse_trt_version(int(_text(core.trt.Version()["tensorrt_version"]))) < (11, 0, 0):
                     backend.custom_args.extend([
                         "--precisionConstraints=obey",
                         "--layerPrecisions=" + (
@@ -1488,7 +1497,7 @@ def SAFA(
 
         cast1, cast2 = [(218, 255), (266, 303), (254, 291)][_adaptive]
 
-        if parse_trt_version(int(core.trt.Version()["tensorrt_version"])) < (11, 0, 0):
+        if parse_trt_version(int(_text(core.trt.Version()["tensorrt_version"]))) < (11, 0, 0):
             backend.custom_args.extend([
                 "--precisionConstraints=obey",
                 "--layerPrecisions=" + (
@@ -2011,7 +2020,7 @@ def trtexec(
 ) -> str:
 
     # tensort runtime version
-    trt_version = parse_trt_version(int(core.trt.Version()["tensorrt_version"]))
+    trt_version = parse_trt_version(int(_text(core.trt.Version()["tensorrt_version"])))
 
     if isinstance(opt_shapes, int):
         opt_shapes = (opt_shapes, opt_shapes)
@@ -2025,7 +2034,7 @@ def trtexec(
         bf16 = False
 
     try:
-        device_name = core.trt.DeviceProperties(device_id)["name"].decode()
+        device_name = _text(core.trt.DeviceProperties(device_id)["name"])
         device_name = device_name.replace(' ', '-')
     except AttributeError:
         device_name = f"device{device_id}"
@@ -2276,10 +2285,10 @@ def get_mxr_path(
     with open(network_path, "rb") as file:
         checksum = zlib.adler32(file.read())
 
-    migx_version = core.migx.Version()["migraphx_version_build"].decode()
+    migx_version = _text(core.migx.Version()["migraphx_version_build"])
 
     try:
-        device_name = core.migx.DeviceProperties(device_id)["name"].decode()
+        device_name = _text(core.migx.DeviceProperties(device_id)["name"])
         device_name = device_name.replace(' ', '-')
     except AttributeError:
         device_name = f"device{device_id}"
@@ -2421,7 +2430,7 @@ def tensorrt_rtx(
 ) -> str:
 
     # tensort runtime version
-    trt_version = parse_trt_version(int(core.trt_rtx.Version()["tensorrt_version"]))
+    trt_version = parse_trt_version(int(_text(core.trt_rtx.Version()["tensorrt_version"])))
 
     if fp16:
         with open(network_path, "rb") as file:
@@ -2447,7 +2456,7 @@ def tensorrt_rtx(
         raise ValueError('tensorrt_rtx: "fp16" must be True.')
 
     try:
-        device_name = core.trt_rtx.DeviceProperties(device_id)["name"].decode()
+        device_name = _text(core.trt_rtx.DeviceProperties(device_id)["name"])
         device_name = device_name.replace(' ', '-')
     except AttributeError:
         device_name = f"device{device_id}"
@@ -2761,7 +2770,7 @@ def _inference(
         kwargs["flexible_output_prop"] = flexible_output_prop
 
     if isinstance(backend, (Backend.ORT_CPU, Backend.ORT_DML, Backend.ORT_COREML, Backend.ORT_CUDA)):
-        version_list = core.ort.Version().get("onnxruntime_version", b"0.0.0").split(b'.')
+        version_list = _text(core.ort.Version().get("onnxruntime_version", "0.0.0")).split('.')
         if len(version_list) != 3:
             version = (0, 0, 0)
         else:
@@ -2810,7 +2819,7 @@ def _inference(
             **kwargs
         )
     elif isinstance(backend, Backend.ORT_CUDA):
-        version_list = core.ort.Version().get("onnxruntime_version", b"0.0.0").split(b'.')
+        version_list = _text(core.ort.Version().get("onnxruntime_version", "0.0.0")).split('.')
         if len(version_list) != 3:
             version = (0, 0, 0)
         else:
@@ -2834,7 +2843,7 @@ def _inference(
             **kwargs
         )
     elif isinstance(backend, Backend.OV_CPU):
-        version = tuple(map(int, core.ov.Version().get("openvino_version", b"0.0.0").split(b'-')[0].split(b'.')))
+        version = tuple(map(int, _text(core.ov.Version().get("openvino_version", "0.0.0")).split('-')[0].split('.')))
 
         if version >= (2024, 0, 0):
             config_dict = dict(
@@ -2868,7 +2877,7 @@ def _inference(
             **kwargs
         )
     elif isinstance(backend, Backend.OV_GPU):
-        version = tuple(map(int, core.ov.Version().get("openvino_version", b"0.0.0").split(b'-')[0].split(b'.')))
+        version = tuple(map(int, _text(core.ov.Version().get("openvino_version", "0.0.0")).split('-')[0].split('.')))
 
         if version >= (2024, 0, 0):
             config_dict = dict(
